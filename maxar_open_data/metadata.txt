@@ -1,0 +1,43 @@
+[general]
+name=Maxar Open Data
+qgisMinimumVersion=3.28
+description=Browse and visualize Maxar Open Data satellite imagery for disaster events directly in QGIS.
+version=0.1.0
+author=Qiusheng Wu
+email=giswqs@gmail.com
+
+about=This plugin provides access to the Maxar Open Data Program, which offers pre- and post-event high-resolution satellite imagery for emergency planning, risk assessment, monitoring of staging areas and emergency response, damage assessment, and recovery.
+
+    Features:
+    - Browse available disaster events with satellite imagery
+    - View and filter imagery footprints on the map
+    - Load and visualize Cloud Optimized GeoTIFFs (COG) directly
+    - Filter imagery by date, cloud cover, platform, and more
+    - Support for visual (RGB), multispectral, and panchromatic imagery
+    - Automatic updates from GitHub
+
+    Data Source: https://www.maxar.com/open-data
+    GitHub Catalog: https://github.com/opengeos/maxar-open-data
+
+tracker=https://github.com/opengeos/qgis-maxar-plugin/issues
+repository=https://github.com/opengeos/qgis-maxar-plugin
+
+hasProcessingProvider=no
+
+tags=maxar, satellite, imagery, disaster, emergency, open data, cog, cloud optimized geotiff, stac
+
+homepage=https://github.com/opengeos/qgis-maxar-plugin
+category=Raster
+icon=icons/icon.svg
+
+experimental=False
+deprecated=False
+
+changelog=
+    0.1.0 - Initial release
+        - Event browser for Maxar Open Data events
+        - Footprint viewer with filtering capabilities
+        - COG visualization for visual, multispectral, and panchromatic imagery
+        - Settings panel for configuration
+        - Update checker for GitHub updates
+
