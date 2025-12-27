@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#1a5f7a" stroke="#0d3d4d" stroke-width="2"/>
+
+  <!-- Satellite dish -->
+  <ellipse cx="32" cy="28" rx="16" ry="10" fill="none" stroke="#ffffff" stroke-width="2.5"/>
+  <ellipse cx="32" cy="28" rx="10" ry="6" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <ellipse cx="32" cy="28" rx="4" ry="2.5" fill="#ffffff"/>
+
+  <!-- Signal waves -->
+  <path d="M 20 38 Q 26 32, 32 38 Q 38 32, 44 38" fill="none" stroke="#4db8ff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M 16 44 Q 24 36, 32 44 Q 40 36, 48 44" fill="none" stroke="#4db8ff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M 12 50 Q 22 40, 32 50 Q 42 40, 52 50" fill="none" stroke="#4db8ff" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Orbit lines -->
+  <ellipse cx="32" cy="18" rx="22" ry="6" fill="none" stroke="#ffffff" stroke-width="1" stroke-dasharray="3,2" opacity="0.6"/>
+</svg>
