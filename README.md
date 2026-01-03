@@ -1,6 +1,6 @@
 # Maxar Open Data QGIS Plugin
 
-[![QGIS](https://img.shields.io/badge/QGIS-3.28+-green.svg)](https://qgis.org)
+[![QGIS Plugin](https://img.shields.io/badge/QGIS-Plugin-green.svg)](https://plugins.qgis.org/plugins/maxar_open_data)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A QGIS plugin for browsing and visualizing [Maxar Open Data](https://www.maxar.com/open-data) satellite imagery for disaster events.
