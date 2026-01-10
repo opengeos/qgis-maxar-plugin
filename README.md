@@ -3,13 +3,16 @@
 [![QGIS Plugin](https://img.shields.io/badge/QGIS-Plugin-green.svg)](https://plugins.qgis.org/plugins/maxar_open_data)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A QGIS plugin for browsing and visualizing [Maxar Open Data](https://www.maxar.com/open-data) satellite imagery for disaster events.
+A QGIS plugin for browsing, visualizing, and downloading [Maxar Open Data](https://www.maxar.com/open-data) satellite imagery for disaster events.
+
+![](https://github.com/user-attachments/assets/a7fe192f-abb7-4ddc-b347-d01f57892a80)
 
 ## Features
 
 - **Event Browser**: Browse 50+ disaster events with available satellite imagery
 - **Footprint Viewer**: View and filter imagery footprints on the map
 - **COG Visualization**: Load and visualize Cloud Optimized GeoTIFFs (COG) directly
+- **Download Imagery**: Download imagery for selected footprints
 - **Filtering**: Filter imagery by cloud cover percentage
 - **Multiple Imagery Types**: Support for visual (RGB), multispectral, and panchromatic imagery
 - **Automatic Updates**: Check for and install updates from GitHub
@@ -25,7 +28,7 @@ This plugin provides access to the [Maxar Open Data Program](https://www.maxar.c
 - Damage assessment
 - Recovery efforts
 
-The data catalog is maintained at [opengeos/maxar-open-data](https://github.com/opengeos/maxar-open-data).
+The data catalog is maintained at [opengeos/maxar-open-data](https://github.com/opengeos/maxar-open-data). It is also available on [AWS Open Data Registry](https://registry.opendata.aws/maxar-open-data/).
 
 ## Installation
 
@@ -94,6 +97,14 @@ After copying, restart QGIS and enable the plugin in **Plugins** → **Manage an
    - **Load MS**: Multispectral imagery
    - **Load Pan**: Panchromatic (high-resolution grayscale) imagery
 
+### Downloading Imagery
+
+1. Select one or more footprints from the table
+2. Click one of the download buttons to download the imagery to your local machine:
+   - **Download Visual**: RGB visual imagery
+   - **Download MS**: Multispectral imagery
+   - **Download Pan**: Panchromatic (high-resolution grayscale) imagery
+
 ### Settings
 
 Access plugin settings by clicking the **Settings** button in the toolbar or menu. You can configure:
@@ -105,7 +116,7 @@ Access plugin settings by clicking the **Settings** button in the toolbar or men
 
 ## Screenshots
 
-*Coming soon*
+![](https://github.com/user-attachments/assets/d795d960-478f-40b3-9fb0-7b06963cbdd8)
 
 ## Requirements
 
