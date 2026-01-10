@@ -33,6 +33,7 @@ from qgis.PyQt.QtWidgets import (
     QMessageBox,
     QDateEdit,
     QApplication,
+    QFileDialog,
 )
 from qgis.PyQt.QtGui import QFont
 from qgis.core import (
@@ -123,6 +124,85 @@ class DataFetchWorker(QThread):
             self.error.emit(f"Error fetching data: {str(e)}")
 
 
+class DownloadWorker(QThread):
+    """Worker thread for downloading imagery files with progress tracking."""
+
+    finished = pyqtSignal(int, int)  # success_count, failed_count
+    error = pyqtSignal(str)
+    progress = pyqtSignal(int, int, str)  # current, total, filename
+    file_progress = pyqtSignal(int)  # percentage for current file
+
+    def __init__(self, download_tasks, output_dir):
+        """Initialize the download worker.
+
+        Args:
+            download_tasks: List of tuples (url, filename, imagery_type).
+            output_dir: Directory to save downloaded files.
+        """
+        super().__init__()
+        self.download_tasks = download_tasks
+        self.output_dir = output_dir
+        self._is_cancelled = False
+
+    def cancel(self):
+        """Cancel the download operation."""
+        self._is_cancelled = True
+
+    def run(self):
+        """Download all files with progress tracking."""
+        success_count = 0
+        failed_count = 0
+        total = len(self.download_tasks)
+
+        for i, (url, filename, imagery_type) in enumerate(self.download_tasks):
+            if self._is_cancelled:
+                break
+
+            self.progress.emit(i + 1, total, filename)
+
+            try:
+                output_path = os.path.join(self.output_dir, filename)
+
+                # Open URL and get content length
+                with urlopen(url, timeout=60) as response:
+                    content_length = response.headers.get("Content-Length")
+                    total_size = int(content_length) if content_length else 0
+
+                    # Download with progress
+                    downloaded = 0
+                    chunk_size = 1024 * 1024  # 1MB chunks
+
+                    with open(output_path, "wb") as f:
+                        while True:
+                            if self._is_cancelled:
+                                break
+
+                            chunk = response.read(chunk_size)
+                            if not chunk:
+                                break
+
+                            f.write(chunk)
+                            downloaded += len(chunk)
+
+                            if total_size > 0:
+                                percent = int((downloaded / total_size) * 100)
+                                self.file_progress.emit(percent)
+
+                if self._is_cancelled:
+                    # Clean up partial file
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                    break
+
+                success_count += 1
+
+            except Exception as e:
+                failed_count += 1
+                self.error.emit(f"Failed to download {filename}: {str(e)}")
+
+        self.finished.emit(success_count, failed_count)
+
+
 class MaxarDockWidget(QDockWidget):
     """Main dockable panel for browsing Maxar Open Data."""
 
@@ -140,6 +220,7 @@ class MaxarDockWidget(QDockWidget):
         self.current_geojson = None
         self.footprints_layer = None
         self.fetch_worker = None
+        self.download_worker = None
         self._updating_selection = False  # Prevent selection feedback loops
         self._sort_order = {}  # Track sort order per column
 
@@ -311,6 +392,35 @@ class MaxarDockWidget(QDockWidget):
         imagery_layout.addWidget(self.load_pan_btn)
 
         actions_inner.addLayout(imagery_layout)
+
+        # Download imagery buttons
+        download_layout = QHBoxLayout()
+
+        self.download_visual_btn = QPushButton("Download Visual")
+        self.download_visual_btn.setToolTip("Download visual (RGB) imagery to disk")
+        self.download_visual_btn.clicked.connect(
+            lambda: self._download_imagery("visual")
+        )
+        self.download_visual_btn.setEnabled(False)
+        download_layout.addWidget(self.download_visual_btn)
+
+        self.download_ms_btn = QPushButton("Download MS")
+        self.download_ms_btn.setToolTip("Download multispectral imagery to disk")
+        self.download_ms_btn.clicked.connect(
+            lambda: self._download_imagery("ms_analytic")
+        )
+        self.download_ms_btn.setEnabled(False)
+        download_layout.addWidget(self.download_ms_btn)
+
+        self.download_pan_btn = QPushButton("Download Pan")
+        self.download_pan_btn.setToolTip("Download panchromatic imagery to disk")
+        self.download_pan_btn.clicked.connect(
+            lambda: self._download_imagery("pan_analytic")
+        )
+        self.download_pan_btn.setEnabled(False)
+        download_layout.addWidget(self.download_pan_btn)
+
+        actions_inner.addLayout(download_layout)
 
         # Clear layers button
         self.clear_btn = QPushButton("Clear All Layers")
@@ -696,6 +806,9 @@ class MaxarDockWidget(QDockWidget):
         self.load_visual_btn.setEnabled(has_selection)
         self.load_ms_btn.setEnabled(has_selection)
         self.load_pan_btn.setEnabled(has_selection)
+        self.download_visual_btn.setEnabled(has_selection)
+        self.download_ms_btn.setEnabled(has_selection)
+        self.download_pan_btn.setEnabled(has_selection)
 
         if has_selection:
             self.status_label.setText(f"{len(selected_rows)} footprint(s) selected")
@@ -984,6 +1097,179 @@ class MaxarDockWidget(QDockWidget):
         # Clear stored results
         self._imagery_load_results = None
 
+    def _download_imagery(self, imagery_type):
+        """Download imagery for selected footprints.
+
+        Args:
+            imagery_type: One of 'visual', 'ms_analytic', or 'pan_analytic'.
+        """
+        features = self._get_selected_features()
+        if not features:
+            QMessageBox.warning(
+                self,
+                "No Selection",
+                "Please select one or more footprints from the table.",
+            )
+            return
+
+        imagery_label = imagery_type.replace("_", " ").title()
+
+        # Collect download tasks
+        download_tasks = []
+        not_available_count = 0
+
+        for feature in features:
+            props = feature.get("properties", {})
+            url = props.get(imagery_type)
+
+            if not url:
+                not_available_count += 1
+                continue
+
+            # Create filename from feature properties
+            catalog_id = props.get("catalog_id", "unknown")
+            quadkey = props.get("quadkey", "")
+            date = props.get("datetime", "")[:10]
+            filename = f"{catalog_id}_{quadkey}_{date}_{imagery_type}.tif"
+
+            download_tasks.append((url, filename, imagery_type))
+
+        if not download_tasks:
+            self.iface.messageBar().pushWarning(
+                "Maxar Open Data",
+                f"{imagery_label} imagery not available for selected footprints. "
+                "This event may only have Visual imagery.",
+            )
+            self.status_label.setText(f"{imagery_label} not available")
+            self.status_label.setStyleSheet("color: orange; font-size: 10px;")
+            return
+
+        # Ask user for download directory
+        output_dir = QFileDialog.getExistingDirectory(
+            self,
+            f"Select Download Directory for {imagery_label} Imagery",
+            self.settings.value("MaxarOpenData/last_download_dir", ""),
+        )
+
+        if not output_dir:
+            return  # User cancelled
+
+        # Save last used directory
+        self.settings.setValue("MaxarOpenData/last_download_dir", output_dir)
+
+        # Show progress bar
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.status_label.setText(
+            f"Downloading {len(download_tasks)} {imagery_label} file(s)..."
+        )
+        self.status_label.setStyleSheet("color: blue; font-size: 10px;")
+
+        # Disable buttons during download
+        self._set_download_buttons_enabled(False)
+
+        # Start download worker
+        self.download_worker = DownloadWorker(download_tasks, output_dir)
+        self.download_worker.progress.connect(self._on_download_progress)
+        self.download_worker.file_progress.connect(self._on_file_download_progress)
+        self.download_worker.error.connect(self._on_download_error)
+        self.download_worker.finished.connect(self._on_download_finished)
+        self.download_worker.start()
+
+        # Store info for completion message
+        self._download_info = {
+            "imagery_label": imagery_label,
+            "output_dir": output_dir,
+            "not_available_count": not_available_count,
+        }
+
+    def _set_download_buttons_enabled(self, enabled):
+        """Enable or disable download-related buttons.
+
+        Args:
+            enabled: Whether to enable the buttons.
+        """
+        self.download_visual_btn.setEnabled(enabled)
+        self.download_ms_btn.setEnabled(enabled)
+        self.download_pan_btn.setEnabled(enabled)
+        self.load_visual_btn.setEnabled(enabled)
+        self.load_ms_btn.setEnabled(enabled)
+        self.load_pan_btn.setEnabled(enabled)
+        self.zoom_btn.setEnabled(enabled)
+
+    def _on_download_progress(self, current, total, filename):
+        """Handle download progress update.
+
+        Args:
+            current: Current file number.
+            total: Total number of files.
+            filename: Name of current file being downloaded.
+        """
+        self.status_label.setText(f"Downloading ({current}/{total}): {filename}")
+
+    def _on_file_download_progress(self, percent):
+        """Handle individual file download progress.
+
+        Args:
+            percent: Download progress percentage (0-100).
+        """
+        self.progress_bar.setValue(percent)
+
+    def _on_download_error(self, error_msg):
+        """Handle download error.
+
+        Args:
+            error_msg: Error message.
+        """
+        self.iface.messageBar().pushWarning("Maxar Open Data", error_msg)
+
+    def _on_download_finished(self, success_count, failed_count):
+        """Handle download completion.
+
+        Args:
+            success_count: Number of successfully downloaded files.
+            failed_count: Number of failed downloads.
+        """
+        # Hide progress bar and re-enable buttons
+        self.progress_bar.setVisible(False)
+
+        # Re-enable buttons if there's still a selection
+        selected_rows = self.footprints_table.selectionModel().selectedRows()
+        if len(selected_rows) > 0:
+            self._set_download_buttons_enabled(True)
+
+        # Get stored info
+        info = getattr(self, "_download_info", {})
+        imagery_label = info.get("imagery_label", "")
+        output_dir = info.get("output_dir", "")
+        not_available_count = info.get("not_available_count", 0)
+
+        # Report results
+        if success_count > 0:
+            self.status_label.setText(
+                f"Downloaded {success_count} {imagery_label} file(s)"
+            )
+            self.status_label.setStyleSheet("color: green; font-size: 10px;")
+            self.iface.messageBar().pushSuccess(
+                "Maxar Open Data",
+                f"Downloaded {success_count} {imagery_label} file(s) to {output_dir}",
+            )
+
+        if failed_count > 0:
+            self.iface.messageBar().pushWarning(
+                "Maxar Open Data", f"Failed to download {failed_count} file(s)"
+            )
+
+        if not_available_count > 0 and success_count > 0:
+            self.iface.messageBar().pushInfo(
+                "Maxar Open Data",
+                f"{not_available_count} footprint(s) don't have {imagery_label} imagery",
+            )
+
+        # Clear stored info
+        self._download_info = None
+
     def _clear_layers(self):
         """Clear all Maxar layers from the project."""
         layers_to_remove = []
@@ -1007,6 +1293,9 @@ class MaxarDockWidget(QDockWidget):
         self.load_visual_btn.setEnabled(False)
         self.load_ms_btn.setEnabled(False)
         self.load_pan_btn.setEnabled(False)
+        self.download_visual_btn.setEnabled(False)
+        self.download_ms_btn.setEnabled(False)
+        self.download_pan_btn.setEnabled(False)
 
         self.status_label.setText("Cleared all Maxar layers")
         self.status_label.setStyleSheet("color: gray; font-size: 10px;")
@@ -1017,5 +1306,9 @@ class MaxarDockWidget(QDockWidget):
         if self.fetch_worker and self.fetch_worker.isRunning():
             self.fetch_worker.terminate()
             self.fetch_worker.wait()
+
+        if self.download_worker and self.download_worker.isRunning():
+            self.download_worker.cancel()
+            self.download_worker.wait()
 
         event.accept()
