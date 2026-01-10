@@ -32,6 +32,7 @@ from qgis.PyQt.QtWidgets import (
     QSplitter,
     QMessageBox,
     QDateEdit,
+    QApplication,
 )
 from qgis.PyQt.QtGui import QFont
 from qgis.core import (
@@ -58,6 +59,32 @@ from qgis.PyQt.QtGui import QColor
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/opengeos/maxar-open-data/master"
 DATASETS_CSV_URL = f"{GITHUB_RAW_URL}/datasets.csv"
 GEOJSON_URL_TEMPLATE = f"{GITHUB_RAW_URL}/datasets/{{event}}.geojson"
+
+
+class NumericTableWidgetItem(QTableWidgetItem):
+    """Custom QTableWidgetItem that sorts numerically instead of alphabetically."""
+
+    def __init__(self, text, numeric_value=None):
+        """Initialize the numeric table widget item.
+
+        Args:
+            text: Display text for the item.
+            numeric_value: Numeric value for sorting. If None, attempts to parse text.
+        """
+        super().__init__(text)
+        if numeric_value is not None:
+            self._numeric_value = numeric_value
+        else:
+            try:
+                self._numeric_value = float(text) if text else 0.0
+            except (ValueError, TypeError):
+                self._numeric_value = 0.0
+
+    def __lt__(self, other):
+        """Compare items numerically for sorting."""
+        if isinstance(other, NumericTableWidgetItem):
+            return self._numeric_value < other._numeric_value
+        return super().__lt__(other)
 
 
 class DataFetchWorker(QThread):
@@ -113,6 +140,8 @@ class MaxarDockWidget(QDockWidget):
         self.current_geojson = None
         self.footprints_layer = None
         self.fetch_worker = None
+        self._updating_selection = False  # Prevent selection feedback loops
+        self._sort_order = {}  # Track sort order per column
 
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self._setup_ui()
@@ -238,6 +267,9 @@ class MaxarDockWidget(QDockWidget):
         self.footprints_table.setAlternatingRowColors(True)
         self.footprints_table.itemSelectionChanged.connect(
             self._on_footprint_selection_changed
+        )
+        self.footprints_table.horizontalHeader().sectionDoubleClicked.connect(
+            self._on_header_double_clicked
         )
         table_layout.addWidget(self.footprints_table)
 
@@ -367,6 +399,24 @@ class MaxarDockWidget(QDockWidget):
         self.start_date_edit.setEnabled(enabled)
         self.end_date_edit.setEnabled(enabled)
 
+    def _on_header_double_clicked(self, column):
+        """Handle double-click on table header to sort column.
+
+        Args:
+            column: Index of the column that was double-clicked.
+        """
+        # Toggle sort order for this column
+        current_order = self._sort_order.get(column, Qt.DescendingOrder)
+        new_order = (
+            Qt.AscendingOrder
+            if current_order == Qt.DescendingOrder
+            else Qt.DescendingOrder
+        )
+        self._sort_order[column] = new_order
+
+        # Sort the table
+        self.footprints_table.sortItems(column, new_order)
+
     def _load_footprints(self):
         """Load footprints for the selected event."""
         event_name = self.event_combo.currentData()
@@ -463,47 +513,84 @@ class MaxarDockWidget(QDockWidget):
         )
 
     def _populate_footprints_table(self, features):
-        """Populate the footprints table with feature data."""
+        """Populate the footprints table with feature data.
+
+        Args:
+            features: List of GeoJSON feature dictionaries to display.
+        """
+        # Disable sorting while populating to avoid performance issues
+        self.footprints_table.setSortingEnabled(False)
         self.footprints_table.setRowCount(0)
         self.footprints_table.setRowCount(len(features))
 
         for row, feature in enumerate(features):
             props = feature.get("properties", {})
 
-            # Store the full feature data
+            # Date column
             self.footprints_table.setItem(
                 row, 0, QTableWidgetItem(props.get("datetime", "")[:10])
             )
+            # Platform column
             self.footprints_table.setItem(
                 row, 1, QTableWidgetItem(props.get("platform", ""))
             )
+            # GSD column (numeric sorting)
+            gsd_value = props.get("gsd", 0)
             self.footprints_table.setItem(
-                row, 2, QTableWidgetItem(str(props.get("gsd", "")))
+                row, 2, NumericTableWidgetItem(str(gsd_value), gsd_value)
             )
+            # Cloud % column (numeric sorting)
+            cloud_value = props.get("tile:clouds_percent", 0)
             self.footprints_table.setItem(
-                row, 3, QTableWidgetItem(str(props.get("tile:clouds_percent", "")))
+                row, 3, NumericTableWidgetItem(str(cloud_value), cloud_value)
             )
+            # Catalog ID column
             self.footprints_table.setItem(
                 row, 4, QTableWidgetItem(props.get("catalog_id", ""))
             )
+            # Quadkey column
             self.footprints_table.setItem(
                 row, 5, QTableWidgetItem(props.get("quadkey", ""))
             )
 
-            # Store feature index for later reference
+            # Store feature index for later reference (used for map selection sync)
             self.footprints_table.item(row, 0).setData(Qt.UserRole, row)
             self.footprints_table.item(row, 0).setData(Qt.UserRole + 1, feature)
+
+        # Re-enable sorting after population
+        self.footprints_table.setSortingEnabled(True)
+
+    def _is_footprints_layer_valid(self):
+        """Check if the footprints layer reference is still valid.
+
+        Returns:
+            True if the layer exists and is valid, False otherwise.
+        """
+        if self.footprints_layer is None:
+            return False
+        try:
+            # Try to access the layer - will raise RuntimeError if deleted
+            _ = self.footprints_layer.id()
+            return True
+        except RuntimeError:
+            self.footprints_layer = None
+            return False
+
+    def _on_footprints_layer_deleted(self):
+        """Handle footprints layer deletion by user."""
+        self.footprints_layer = None
 
     def _add_footprints_layer(self, geojson_data):
         """Add footprints as a vector layer to QGIS."""
         event_name = self.event_combo.currentData()
 
         # Remove existing footprints layer if any
-        if self.footprints_layer:
+        if self._is_footprints_layer_valid():
             try:
                 QgsProject.instance().removeMapLayer(self.footprints_layer.id())
             except Exception:
                 pass
+        self.footprints_layer = None
 
         # Create a temporary GeoJSON file
         temp_dir = tempfile.gettempdir()
@@ -523,6 +610,19 @@ class MaxarDockWidget(QDockWidget):
 
             # Apply semi-transparent styling
             self._apply_footprints_style(self.footprints_layer)
+
+            # Set yellow selection color for this layer
+            self.iface.mapCanvas().setSelectionColor(QColor(255, 255, 0, 200))
+
+            # Connect layer selection changed signal for map -> table sync
+            self.footprints_layer.selectionChanged.connect(
+                self._on_layer_selection_changed
+            )
+
+            # Connect to layer deletion signal to handle manual removal
+            self.footprints_layer.willBeDeleted.connect(
+                self._on_footprints_layer_deleted
+            )
 
             # Add to project
             QgsProject.instance().addMapLayer(self.footprints_layer)
@@ -601,6 +701,80 @@ class MaxarDockWidget(QDockWidget):
             self.status_label.setText(f"{len(selected_rows)} footprint(s) selected")
             self.status_label.setStyleSheet("color: gray; font-size: 10px;")
 
+        # Sync selection to map layer (table -> map)
+        if not self._updating_selection and self._is_footprints_layer_valid():
+            self._updating_selection = True
+            try:
+                # Get row indices from selected rows
+                selected_feature_ids = []
+                for model_index in selected_rows:
+                    row = model_index.row()
+                    item = self.footprints_table.item(row, 0)
+                    if item:
+                        # Get the original feature index stored in UserRole
+                        feature_idx = item.data(Qt.UserRole)
+                        if feature_idx is not None:
+                            selected_feature_ids.append(feature_idx)
+
+                # Select features on the map layer
+                self.footprints_layer.selectByIds(selected_feature_ids)
+            finally:
+                self._updating_selection = False
+
+    def _on_layer_selection_changed(self, selected, deselected, clear_and_select):
+        """Handle selection change on the map layer (map -> table sync).
+
+        Args:
+            selected: List of selected feature IDs.
+            deselected: List of deselected feature IDs.
+            clear_and_select: Boolean indicating if selection was cleared first.
+        """
+        if self._updating_selection or not self._is_footprints_layer_valid():
+            return
+
+        self._updating_selection = True
+        try:
+            # Get currently selected feature IDs from the layer
+            selected_ids = set(self.footprints_layer.selectedFeatureIds())
+
+            # Build a mapping of feature index to table row
+            # (needed because table may be sorted differently)
+            feature_idx_to_row = {}
+            for row in range(self.footprints_table.rowCount()):
+                item = self.footprints_table.item(row, 0)
+                if item:
+                    feature_idx = item.data(Qt.UserRole)
+                    if feature_idx is not None:
+                        feature_idx_to_row[feature_idx] = row
+
+            # Clear current table selection and select matching rows
+            self.footprints_table.clearSelection()
+            for feature_id in selected_ids:
+                if feature_id in feature_idx_to_row:
+                    row = feature_idx_to_row[feature_id]
+                    # Select the entire row
+                    for col in range(self.footprints_table.columnCount()):
+                        item = self.footprints_table.item(row, col)
+                        if item:
+                            item.setSelected(True)
+
+            # Scroll to first selected row if any
+            if selected_ids and feature_idx_to_row:
+                first_selected = min(
+                    (
+                        feature_idx_to_row.get(fid)
+                        for fid in selected_ids
+                        if fid in feature_idx_to_row
+                    ),
+                    default=None,
+                )
+                if first_selected is not None:
+                    self.footprints_table.scrollToItem(
+                        self.footprints_table.item(first_selected, 0)
+                    )
+        finally:
+            self._updating_selection = False
+
     def _get_selected_features(self):
         """Get the selected features from the table."""
         features = []
@@ -668,15 +842,29 @@ class MaxarDockWidget(QDockWidget):
             )
             return
 
+        imagery_label = imagery_type.replace("_", " ").title()
+
+        # Disable buttons during loading
+        self.load_visual_btn.setEnabled(False)
+        self.load_ms_btn.setEnabled(False)
+        self.load_pan_btn.setEnabled(False)
+
+        # Set busy cursor
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+
         loaded_count = 0
-        failed_count = 0
+        not_available_count = 0
+        load_failed_count = 0
+
+        # Collect layers to add
+        layers_to_add = []
 
         for feature in features:
             props = feature.get("properties", {})
             url = props.get(imagery_type)
 
             if not url:
-                failed_count += 1
+                not_available_count += 1
                 continue
 
             # Create layer name
@@ -690,22 +878,111 @@ class MaxarDockWidget(QDockWidget):
             layer = QgsRasterLayer(cog_url, layer_name, "gdal")
 
             if layer.isValid():
-                QgsProject.instance().addMapLayer(layer)
+                layers_to_add.append(layer)
                 loaded_count += 1
             else:
-                failed_count += 1
+                load_failed_count += 1
+
+        # Restore cursor
+        QApplication.restoreOverrideCursor()
+
+        # Handle case where no imagery is available
+        if not_available_count > 0 and loaded_count == 0:
+            self.load_visual_btn.setEnabled(True)
+            self.load_ms_btn.setEnabled(True)
+            self.load_pan_btn.setEnabled(True)
+            self.iface.messageBar().pushWarning(
+                "Maxar Open Data",
+                f"{imagery_label} imagery not available for selected footprints. "
+                "This event may only have Visual imagery.",
+            )
+            self.status_label.setText(f"{imagery_label} not available")
+            self.status_label.setStyleSheet("color: orange; font-size: 10px;")
+            return
+
+        if load_failed_count > 0 and loaded_count == 0:
+            self.load_visual_btn.setEnabled(True)
+            self.load_ms_btn.setEnabled(True)
+            self.load_pan_btn.setEnabled(True)
+            self.iface.messageBar().pushWarning(
+                "Maxar Open Data", f"Failed to add imagery layer(s)"
+            )
+            return
+
+        # Store results for the callback
+        self._imagery_load_results = {
+            "loaded_count": loaded_count,
+            "not_available_count": not_available_count,
+            "load_failed_count": load_failed_count,
+            "imagery_label": imagery_label,
+        }
+
+        # Show spinning progress bar
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # Indeterminate/spinning mode
+        self.status_label.setText(
+            f"Loading {imagery_label} imagery from cloud ({loaded_count} layer(s))..."
+        )
+        self.status_label.setStyleSheet("color: blue; font-size: 10px;")
+        QApplication.processEvents()
+
+        # Connect to map canvas refresh signal to know when rendering is done
+        self.iface.mapCanvas().mapCanvasRefreshed.connect(self._on_imagery_loaded)
+
+        # Add layers and trigger refresh
+        for layer in layers_to_add:
+            QgsProject.instance().addMapLayer(layer)
+
+        # Trigger map refresh - this will load the imagery
+        self.iface.mapCanvas().refresh()
+
+    def _on_imagery_loaded(self):
+        """Handle map canvas refresh completion after imagery loading."""
+        # Disconnect the signal
+        try:
+            self.iface.mapCanvas().mapCanvasRefreshed.disconnect(
+                self._on_imagery_loaded
+            )
+        except TypeError:
+            pass  # Signal was not connected
+
+        # Hide progress bar and re-enable buttons
+        self.progress_bar.setVisible(False)
+        self.load_visual_btn.setEnabled(True)
+        self.load_ms_btn.setEnabled(True)
+        self.load_pan_btn.setEnabled(True)
+
+        # Get stored results
+        results = getattr(self, "_imagery_load_results", None)
+        if not results:
+            return
+
+        loaded_count = results["loaded_count"]
+        not_available_count = results["not_available_count"]
+        load_failed_count = results["load_failed_count"]
+        imagery_label = results["imagery_label"]
 
         # Report results
         if loaded_count > 0:
-            self.status_label.setText(f"Loaded {loaded_count} imagery layer(s)")
+            self.status_label.setText(f"Loaded {loaded_count} {imagery_label} layer(s)")
             self.status_label.setStyleSheet("color: green; font-size: 10px;")
             self.iface.messageBar().pushSuccess(
-                "Maxar Open Data", f"Loaded {loaded_count} imagery layer(s)"
+                "Maxar Open Data", f"Loaded {loaded_count} {imagery_label} layer(s)"
             )
-        if failed_count > 0:
+
+        if not_available_count > 0 and loaded_count > 0:
+            self.iface.messageBar().pushInfo(
+                "Maxar Open Data",
+                f"{not_available_count} footprint(s) don't have {imagery_label} imagery",
+            )
+
+        if load_failed_count > 0:
             self.iface.messageBar().pushWarning(
-                "Maxar Open Data", f"Failed to load {failed_count} imagery layer(s)"
+                "Maxar Open Data", f"Failed to add {load_failed_count} imagery layer(s)"
             )
+
+        # Clear stored results
+        self._imagery_load_results = None
 
     def _clear_layers(self):
         """Clear all Maxar layers from the project."""
