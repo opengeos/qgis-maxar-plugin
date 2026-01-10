@@ -35,7 +35,7 @@ experimental=False
 deprecated=False
 
 changelog=
-    0.2.0 
+    0.2.0
         - Add support for bidirectional selection
         - Add support for downloading data
     0.1.0 - Initial release
