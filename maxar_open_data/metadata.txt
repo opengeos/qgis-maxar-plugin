@@ -2,7 +2,7 @@
 name=Maxar Open Data
 qgisMinimumVersion=3.28
 description=Browse and visualize Maxar Open Data satellite imagery for disaster events directly in QGIS.
-version=0.1.0
+version=0.2.0
 author=Qiusheng Wu
 email=giswqs@gmail.com
 
@@ -14,6 +14,7 @@ about=This plugin provides access to the Maxar Open Data Program, which offers p
     - Load and visualize Cloud Optimized GeoTIFFs (COG) directly
     - Filter imagery by date, cloud cover, platform, and more
     - Support for visual (RGB), multispectral, and panchromatic imagery
+    - Download imagery for selected footprints
     - Automatic updates from GitHub
 
     Data Source: https://www.maxar.com/open-data
@@ -34,6 +35,9 @@ experimental=False
 deprecated=False
 
 changelog=
+    0.2.0
+        - Add support for bidirectional selection
+        - Add support for downloading data
     0.1.0 - Initial release
         - Event browser for Maxar Open Data events
         - Footprint viewer with filtering capabilities
