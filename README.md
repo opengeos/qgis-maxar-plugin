@@ -30,6 +30,10 @@ This plugin provides access to the [Maxar Open Data Program](https://www.maxar.c
 
 The data catalog is maintained at [opengeos/maxar-open-data](https://github.com/opengeos/maxar-open-data). It is also available on [AWS Open Data Registry](https://registry.opendata.aws/maxar-open-data/).
 
+## Video Tutorial
+
+[![Maxar Open Data QGIS Plugin](https://github.com/user-attachments/assets/dec125cf-80bb-48ef-8bb6-c62527804904)](https://youtu.be/Fm_Sr5Mr6Co)
+
 ## Installation
 
 ### From QGIS Plugin Manager (Recommended)
