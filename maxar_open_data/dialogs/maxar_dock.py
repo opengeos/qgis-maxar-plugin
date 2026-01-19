@@ -55,7 +55,6 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QVariant, QDate
 from qgis.PyQt.QtGui import QColor
 
-
 # GitHub URLs for the Maxar Open Data
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/opengeos/maxar-open-data/master"
 DATASETS_CSV_URL = f"{GITHUB_RAW_URL}/datasets.csv"
