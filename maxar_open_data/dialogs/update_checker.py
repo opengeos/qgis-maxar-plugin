@@ -10,9 +10,10 @@ import re
 import shutil
 import tempfile
 import zipfile
-from urllib.parse import urlparse
 from urllib.request import urlopen, urlretrieve
 from urllib.error import URLError, HTTPError
+
+from ..security import require_https
 
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal
 from qgis.PyQt.QtWidgets import (
@@ -37,19 +38,6 @@ METADATA_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}
 ZIP_URL = f"https://github.com/{GITHUB_REPO}/archive/refs/heads/{GITHUB_BRANCH}.zip"
 
 
-def _require_https(url):
-    """Reject any URL that does not use the https scheme.
-
-    Args:
-        url: URL to validate before passing to ``urlopen`` / ``urlretrieve``.
-
-    Raises:
-        ValueError: If the URL scheme is not ``https``.
-    """
-    if urlparse(url).scheme != "https":
-        raise ValueError(f"URL must use https scheme: {url}")
-
-
 class VersionCheckWorker(QThread):
     """Worker thread for checking the latest version from GitHub."""
 
@@ -59,7 +47,7 @@ class VersionCheckWorker(QThread):
     def run(self):
         """Fetch the latest metadata from GitHub."""
         try:
-            _require_https(METADATA_URL)
+            require_https(METADATA_URL)
             with urlopen(METADATA_URL, timeout=15) as response:  # nosec B310
                 content = response.read().decode("utf-8")
 
@@ -121,7 +109,7 @@ class DownloadWorker(QThread):
                     percent = min(int((downloaded / total_size) * 50), 50)
                     self.progress.emit(10 + percent, "Downloading...")
 
-            _require_https(ZIP_URL)
+            require_https(ZIP_URL)
             urlretrieve(ZIP_URL, zip_path, reporthook)  # nosec B310
 
             self.progress.emit(60, "Extracting files...")

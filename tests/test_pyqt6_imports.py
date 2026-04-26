@@ -1,12 +1,14 @@
-"""Import-smoke tests that verify every plugin module loads under PyQt6.
+"""Import-smoke tests that verify every plugin module loads under PyQt5/PyQt6.
 
 This catches short-form Qt enum regressions (for example ``Qt.AlignCenter``
 instead of ``Qt.AlignmentFlag.AlignCenter``) which raise ``AttributeError`` in
-PyQt6 during class-body evaluation.
+PyQt6 during class-body evaluation, and also catches accidental use of
+Qt6-only APIs that would break QGIS 3.x users on PyQt5.
 
 The plugin package is auto-discovered: the first sibling directory of
 ``tests/`` that contains a ``metadata.txt`` is treated as the plugin root,
-so this file does not need to be edited per-plugin.
+so this file does not need to be edited per-plugin. ``conftest.py`` picks
+whichever PyQt is installed (preferring PyQt6 when both are present).
 """
 
 import importlib
@@ -49,6 +51,6 @@ def _module_names():
 
 
 @pytest.mark.parametrize("module_name", list(_module_names()))
-def test_module_imports_under_pyqt6(module_name):
-    """Each plugin module must import cleanly when qgis.PyQt maps to PyQt6."""
+def test_module_imports(module_name):
+    """Each plugin module must import cleanly under whichever PyQt is installed."""
     importlib.import_module(module_name)

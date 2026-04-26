@@ -8,9 +8,10 @@ Maxar Open Data satellite imagery.
 import json
 import os
 import tempfile
-from urllib.parse import urlparse
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
+
+from ..security import require_https
 
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QSettings
 from qgis.PyQt.QtWidgets import (
@@ -64,19 +65,6 @@ DATASETS_CSV_URL = f"{GITHUB_RAW_URL}/datasets.csv"
 GEOJSON_URL_TEMPLATE = f"{GITHUB_RAW_URL}/datasets/{{event}}.geojson"
 
 
-def _require_https(url):
-    """Reject any URL that does not use the https scheme.
-
-    Args:
-        url: URL to validate before passing to ``urlopen`` / ``urlretrieve``.
-
-    Raises:
-        ValueError: If the URL scheme is not ``https``.
-    """
-    if urlparse(url).scheme != "https":
-        raise ValueError(f"URL must use https scheme: {url}")
-
-
 class NumericTableWidgetItem(QTableWidgetItem):
     """Custom QTableWidgetItem that sorts numerically instead of alphabetically."""
 
@@ -119,7 +107,7 @@ class DataFetchWorker(QThread):
         """Fetch data from the URL."""
         try:
             self.progress.emit(f"Fetching data from {self.url}...")
-            _require_https(self.url)
+            require_https(self.url)
             with urlopen(self.url, timeout=30) as response:  # nosec B310
                 content = response.read().decode("utf-8")
 
@@ -180,7 +168,7 @@ class DownloadWorker(QThread):
                 output_path = os.path.join(self.output_dir, filename)
 
                 # Open URL and get content length
-                _require_https(url)
+                require_https(url)
                 with urlopen(url, timeout=60) as response:  # nosec B310
                     content_length = response.headers.get("Content-Length")
                     total_size = int(content_length) if content_length else 0
