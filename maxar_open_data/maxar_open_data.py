@@ -187,7 +187,9 @@ class MaxarOpenData:
                 self._maxar_dock.visibilityChanged.connect(
                     self._on_maxar_visibility_changed
                 )
-                self.iface.addDockWidget(Qt.RightDockWidgetArea, self._maxar_dock)
+                self.iface.addDockWidget(
+                    Qt.DockWidgetArea.RightDockWidgetArea, self._maxar_dock
+                )
                 self._maxar_dock.show()
                 self._maxar_dock.raise_()
                 return
@@ -225,7 +227,9 @@ class MaxarOpenData:
                 self._settings_dock.visibilityChanged.connect(
                     self._on_settings_visibility_changed
                 )
-                self.iface.addDockWidget(Qt.RightDockWidgetArea, self._settings_dock)
+                self.iface.addDockWidget(
+                    Qt.DockWidgetArea.RightDockWidgetArea, self._settings_dock
+                )
                 self._settings_dock.show()
                 self._settings_dock.raise_()
                 return
@@ -320,7 +324,7 @@ risk assessment, damage assessment, and recovery efforts.</p>
 
         try:
             dialog = UpdateCheckerDialog(self.plugin_dir, self.iface.mainWindow())
-            dialog.exec_()
+            dialog.exec()
         except Exception as e:
             QMessageBox.critical(
                 self.iface.mainWindow(),

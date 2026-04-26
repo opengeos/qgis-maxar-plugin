@@ -42,7 +42,9 @@ class SettingsDockWidget(QDockWidget):
         self.iface = iface
         self.settings = QSettings()
 
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
 
         self._setup_ui()
         self._load_settings()
@@ -63,7 +65,7 @@ class SettingsDockWidget(QDockWidget):
         header_font.setPointSize(12)
         header_font.setBold(True)
         header_label.setFont(header_font)
-        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header_label)
 
         # Tab widget for organized settings
@@ -250,7 +252,7 @@ class SettingsDockWidget(QDockWidget):
 
     def _on_local_data_changed(self, state):
         """Handle local data checkbox change."""
-        enabled = state == Qt.Checked
+        enabled = state == Qt.CheckState.Checked
         self.local_path_input.setEnabled(enabled)
         self.browse_btn.setEnabled(enabled)
 
@@ -311,7 +313,9 @@ class SettingsDockWidget(QDockWidget):
 
         # Update enabled states
         self._on_local_data_changed(
-            Qt.Checked if self.use_local_check.isChecked() else Qt.Unchecked
+            Qt.CheckState.Checked
+            if self.use_local_check.isChecked()
+            else Qt.CheckState.Unchecked
         )
 
         self.status_label.setText("Settings loaded")
@@ -380,11 +384,11 @@ class SettingsDockWidget(QDockWidget):
             self,
             "Reset Settings",
             "Are you sure you want to reset all settings to defaults?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
 
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
 
         # Data
@@ -407,7 +411,7 @@ class SettingsDockWidget(QDockWidget):
         self.show_urls_check.setChecked(False)
 
         # Update enabled states
-        self._on_local_data_changed(Qt.Unchecked)
+        self._on_local_data_changed(Qt.CheckState.Unchecked)
 
         self.status_label.setText("Defaults restored (not saved)")
         self.status_label.setStyleSheet("color: orange; font-size: 10px;")

@@ -126,7 +126,7 @@ Access plugin settings by clicking the **Settings** button in the toolbar or men
 
 ## Requirements
 
-- QGIS 3.28 or later
+- QGIS 3.28+ (Qt5) or QGIS 4.0+ (Qt6)
 - Internet connection (for fetching event data and imagery)
 
 ## Packaging for Distribution

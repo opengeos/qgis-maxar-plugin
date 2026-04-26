@@ -8,6 +8,7 @@ Maxar Open Data satellite imagery.
 import json
 import os
 import tempfile
+from urllib.parse import urlparse
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
 
@@ -37,6 +38,8 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtGui import QFont
 from qgis.core import (
+    Qgis,
+    QgsMessageLog,
     QgsProject,
     QgsVectorLayer,
     QgsRasterLayer,
@@ -59,6 +62,19 @@ from qgis.PyQt.QtGui import QColor
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/opengeos/maxar-open-data/master"
 DATASETS_CSV_URL = f"{GITHUB_RAW_URL}/datasets.csv"
 GEOJSON_URL_TEMPLATE = f"{GITHUB_RAW_URL}/datasets/{{event}}.geojson"
+
+
+def _require_https(url):
+    """Reject any URL that does not use the https scheme.
+
+    Args:
+        url: URL to validate before passing to ``urlopen`` / ``urlretrieve``.
+
+    Raises:
+        ValueError: If the URL scheme is not ``https``.
+    """
+    if urlparse(url).scheme != "https":
+        raise ValueError(f"URL must use https scheme: {url}")
 
 
 class NumericTableWidgetItem(QTableWidgetItem):
@@ -103,7 +119,8 @@ class DataFetchWorker(QThread):
         """Fetch data from the URL."""
         try:
             self.progress.emit(f"Fetching data from {self.url}...")
-            with urlopen(self.url, timeout=30) as response:
+            _require_https(self.url)
+            with urlopen(self.url, timeout=30) as response:  # nosec B310
                 content = response.read().decode("utf-8")
 
             if self.data_type == "json":
@@ -163,7 +180,8 @@ class DownloadWorker(QThread):
                 output_path = os.path.join(self.output_dir, filename)
 
                 # Open URL and get content length
-                with urlopen(url, timeout=60) as response:
+                _require_https(url)
+                with urlopen(url, timeout=60) as response:  # nosec B310
                     content_length = response.headers.get("Content-Length")
                     total_size = int(content_length) if content_length else 0
 
@@ -223,7 +241,9 @@ class MaxarDockWidget(QDockWidget):
         self._updating_selection = False  # Prevent selection feedback loops
         self._sort_order = {}  # Track sort order per column
 
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
         self._setup_ui()
         self._load_events()
 
@@ -243,7 +263,7 @@ class MaxarDockWidget(QDockWidget):
         header_font.setPointSize(12)
         header_font.setBold(True)
         header_label.setFont(header_font)
-        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header_label)
 
         # Description
@@ -322,7 +342,7 @@ class MaxarDockWidget(QDockWidget):
         layout.addWidget(self.progress_bar)
 
         # Splitter for table and controls
-        splitter = QSplitter(Qt.Vertical)
+        splitter = QSplitter(Qt.Orientation.Vertical)
 
         # Footprints table
         table_widget = QWidget()
@@ -339,11 +359,15 @@ class MaxarDockWidget(QDockWidget):
             ["Date", "Platform", "GSD", "Cloud %", "Catalog ID", "Quadkey"]
         )
         self.footprints_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeToContents
+            QHeaderView.ResizeMode.ResizeToContents
         )
         self.footprints_table.horizontalHeader().setStretchLastSection(True)
-        self.footprints_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.footprints_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.footprints_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.footprints_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self.footprints_table.setAlternatingRowColors(True)
         self.footprints_table.itemSelectionChanged.connect(
             self._on_footprint_selection_changed
@@ -504,7 +528,7 @@ class MaxarDockWidget(QDockWidget):
 
     def _on_date_filter_changed(self, state):
         """Handle date filter checkbox state change."""
-        enabled = state == Qt.Checked
+        enabled = state == Qt.CheckState.Checked
         self.start_date_edit.setEnabled(enabled)
         self.end_date_edit.setEnabled(enabled)
 
@@ -515,11 +539,11 @@ class MaxarDockWidget(QDockWidget):
             column: Index of the column that was double-clicked.
         """
         # Toggle sort order for this column
-        current_order = self._sort_order.get(column, Qt.DescendingOrder)
+        current_order = self._sort_order.get(column, Qt.SortOrder.DescendingOrder)
         new_order = (
-            Qt.AscendingOrder
-            if current_order == Qt.DescendingOrder
-            else Qt.DescendingOrder
+            Qt.SortOrder.AscendingOrder
+            if current_order == Qt.SortOrder.DescendingOrder
+            else Qt.SortOrder.DescendingOrder
         )
         self._sort_order[column] = new_order
 
@@ -663,8 +687,10 @@ class MaxarDockWidget(QDockWidget):
             )
 
             # Store feature index for later reference (used for map selection sync)
-            self.footprints_table.item(row, 0).setData(Qt.UserRole, row)
-            self.footprints_table.item(row, 0).setData(Qt.UserRole + 1, feature)
+            self.footprints_table.item(row, 0).setData(Qt.ItemDataRole.UserRole, row)
+            self.footprints_table.item(row, 0).setData(
+                Qt.ItemDataRole.UserRole + 1, feature
+            )
 
         # Re-enable sorting after population
         self.footprints_table.setSortingEnabled(True)
@@ -697,8 +723,12 @@ class MaxarDockWidget(QDockWidget):
         if self._is_footprints_layer_valid():
             try:
                 QgsProject.instance().removeMapLayer(self.footprints_layer.id())
-            except Exception:
-                pass
+            except Exception as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to remove stale footprints layer: {exc}",
+                    "Maxar Open Data",
+                    Qgis.MessageLevel.Warning,
+                )
         self.footprints_layer = None
 
         # Create a temporary GeoJSON file
@@ -824,7 +854,7 @@ class MaxarDockWidget(QDockWidget):
                     item = self.footprints_table.item(row, 0)
                     if item:
                         # Get the original feature index stored in UserRole
-                        feature_idx = item.data(Qt.UserRole)
+                        feature_idx = item.data(Qt.ItemDataRole.UserRole)
                         if feature_idx is not None:
                             selected_feature_ids.append(feature_idx)
 
@@ -855,7 +885,7 @@ class MaxarDockWidget(QDockWidget):
             for row in range(self.footprints_table.rowCount()):
                 item = self.footprints_table.item(row, 0)
                 if item:
-                    feature_idx = item.data(Qt.UserRole)
+                    feature_idx = item.data(Qt.ItemDataRole.UserRole)
                     if feature_idx is not None:
                         feature_idx_to_row[feature_idx] = row
 
@@ -896,7 +926,7 @@ class MaxarDockWidget(QDockWidget):
             row = model_index.row()
             item = self.footprints_table.item(row, 0)
             if item:
-                feature = item.data(Qt.UserRole + 1)
+                feature = item.data(Qt.ItemDataRole.UserRole + 1)
                 if feature:
                     features.append(feature)
 
@@ -962,7 +992,7 @@ class MaxarDockWidget(QDockWidget):
         self.load_pan_btn.setEnabled(False)
 
         # Set busy cursor
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
 
         loaded_count = 0
         not_available_count = 0
