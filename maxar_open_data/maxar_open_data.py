@@ -11,9 +11,9 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMenu, QToolBar, QMessageBox
 
-
 TOOLBAR_OBJECT_NAME = "MaxarOpenDataToolbar"
 MENU_TITLE = "&Maxar Open Data"
+
 
 class MaxarOpenData:
     """Maxar Open Data plugin implementation class for QGIS."""
@@ -155,7 +155,6 @@ class MaxarOpenData:
             status_tip="About Maxar Open Data Plugin",
             parent=self.iface.mainWindow(),
         )
-
 
     def _remove_toolbar(self, toolbar):
         """Detach and schedule deletion of a plugin toolbar widget."""
